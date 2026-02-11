@@ -33,7 +33,7 @@ CATEGORY_DESCRIPTIONS = {
 }
 
 
-def _build_news_text(items: list[dict], max_items: int = 60) -> str:
+def _build_news_text(items: list[dict], max_items: int = 50) -> str:
     """Format news items into a compact text block for the prompt."""
     lines = []
     for i, item in enumerate(items[:max_items], 1):
@@ -123,7 +123,7 @@ Categories:
     try:
         message = client.messages.create(
             model=model,
-            max_tokens=4096,
+            max_tokens=8192,
             messages=[{"role": "user", "content": prompt}],
         )
         raw = message.content[0].text.strip()

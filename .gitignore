@@ -16,11 +16,9 @@ build/
 *.env
 secrets.json
 
-# Output files
+# Output files (do NOT add *.html — the email template must be committed)
 briefing_output.html
 briefing_output.json
-*.html
-*.json
 
 # IDE
 .vscode/
