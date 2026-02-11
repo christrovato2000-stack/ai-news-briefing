@@ -1,0 +1,108 @@
+name: AI & Tech Weekly Briefing
+
+on:
+  # Run every Saturday at 9:00 AM UTC
+  schedule:
+    - cron: "0 9 * * 6"
+
+  # Allow manual triggering from the GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (fetch & summarize but do not send email)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      days:
+        description: "Number of days to look back for news"
+        required: false
+        default: "7"
+      save_output:
+        description: "Save rendered HTML as an artifact"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+env:
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+  GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+  RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+  LOG_LEVEL: INFO
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  send-briefing:
+    name: Generate and Send Weekly Briefing
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Determine run flags
+        id: flags
+        run: |
+          DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
+          DAYS="${{ github.event.inputs.days || '7' }}"
+          SAVE_OUTPUT="${{ github.event.inputs.save_output || 'true' }}"
+
+          FLAGS="--days $DAYS"
+          if [ "$DRY_RUN" = "true" ]; then
+            FLAGS="$FLAGS --dry-run"
+          fi
+          if [ "$SAVE_OUTPUT" = "true" ]; then
+            FLAGS="$FLAGS --output briefing_output.html --save-json briefing_output.json"
+          fi
+
+          echo "flags=$FLAGS" >> "$GITHUB_OUTPUT"
+          echo "save_output=$SAVE_OUTPUT" >> "$GITHUB_OUTPUT"
+
+      - name: Validate required secrets
+        run: |
+          missing=()
+          [ -z "$ANTHROPIC_API_KEY" ]    && missing+=("ANTHROPIC_API_KEY")
+          [ -z "$SENDER_EMAIL" ]         && missing+=("SENDER_EMAIL")
+          [ -z "$GMAIL_APP_PASSWORD" ]   && missing+=("GMAIL_APP_PASSWORD")
+          [ -z "$RECIPIENT_EMAIL" ]      && missing+=("RECIPIENT_EMAIL")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "ERROR: Missing required secrets: ${missing[*]}"
+            echo "Please add them under Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          echo "All required secrets are present."
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+
+      - name: Run briefing pipeline
+        run: python main.py ${{ steps.flags.outputs.flags }}
+
+      - name: Upload HTML artifact
+        if: steps.flags.outputs.save_output == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: briefing-${{ github.run_id }}
+          path: |
+            briefing_output.html
+            briefing_output.json
+          retention-days: 30
+          if-no-files-found: warn
