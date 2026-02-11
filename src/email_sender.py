@@ -27,7 +27,10 @@ CATEGORY_ICONS = {
 
 def _render_html(briefing: dict) -> str:
     """Render the email HTML from the Jinja2 template."""
-    template_dir = Path(__file__).parent / "templates"
+    # Anchor to the project root (one level above this src/ file) so the
+    # template is found correctly regardless of the working directory.
+    project_root = Path(__file__).resolve().parent.parent
+    template_dir = project_root / "src" / "templates"
     env = Environment(
         loader=FileSystemLoader(str(template_dir)),
         autoescape=select_autoescape(["html"]),
