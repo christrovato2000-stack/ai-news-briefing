@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(git -C \"C:\\\\Users\\\\trova\\\\Desktop\\\\AI News Briefing\" status)",
+      "Bash(git -C \"C:\\\\Users\\\\trova\\\\Desktop\\\\AI News Briefing\" ls-files src/templates/)",
+      "Bash(git -C \"C:\\\\Users\\\\trova\\\\Desktop\\\\AI News Briefing\" check-ignore -v src/templates/email_template.html)",
+      "Bash(pip install:*)",
+      "Bash(del \"C:\\\\Users\\\\trova\\\\Desktop\\\\AI News Briefing\\\\test_briefing.pdf\")",
+      "Bash(git -C \"C:\\\\Users\\\\trova\\\\Desktop\\\\AI News Briefing\" status --short)"
+    ]
+  }
+}

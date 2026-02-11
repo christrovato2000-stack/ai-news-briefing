@@ -10,5 +10,8 @@ anthropic>=0.34.0
 # HTML email templating
 Jinja2>=3.1.4
 
-# Useful extras (already in stdlib on 3.11+ but pin for older envs)
-# smtplib is stdlib — no install needed
+# PDF generation
+reportlab>=4.2.0
+
+# Useful extras
+python-dateutil>=2.9.0

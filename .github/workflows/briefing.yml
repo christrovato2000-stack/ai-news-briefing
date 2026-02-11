@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Dry run (fetch & summarize but do not send email)"
+        description: "Dry run (generate PDF but do not send email)"
         required: false
         default: "false"
         type: choice
@@ -20,8 +20,8 @@ on:
         description: "Number of days to look back for news"
         required: false
         default: "7"
-      save_output:
-        description: "Save rendered HTML as an artifact"
+      save_artifacts:
+        description: "Upload PDF and JSON as workflow artifacts"
         required: false
         default: "true"
         type: choice
@@ -41,7 +41,7 @@ jobs:
   send-briefing:
     name: Generate and Send Weekly Briefing
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Checkout repository
@@ -56,24 +56,6 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Determine run flags
-        id: flags
-        run: |
-          DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
-          DAYS="${{ github.event.inputs.days || '7' }}"
-          SAVE_OUTPUT="${{ github.event.inputs.save_output || 'true' }}"
-
-          FLAGS="--days $DAYS"
-          if [ "$DRY_RUN" = "true" ]; then
-            FLAGS="$FLAGS --dry-run"
-          fi
-          if [ "$SAVE_OUTPUT" = "true" ]; then
-            FLAGS="$FLAGS --output briefing_output.html --save-json briefing_output.json"
-          fi
-
-          echo "flags=$FLAGS" >> "$GITHUB_OUTPUT"
-          echo "save_output=$SAVE_OUTPUT" >> "$GITHUB_OUTPUT"
-
       - name: Validate required secrets
         run: |
           missing=()
@@ -82,27 +64,83 @@ jobs:
           [ -z "$GMAIL_APP_PASSWORD" ]   && missing+=("GMAIL_APP_PASSWORD")
           [ -z "$RECIPIENT_EMAIL" ]      && missing+=("RECIPIENT_EMAIL")
           if [ ${#missing[@]} -gt 0 ]; then
-            echo "ERROR: Missing required secrets: ${missing[*]}"
+            echo "::error::Missing required secrets: ${missing[*]}"
             echo "Please add them under Settings → Secrets and variables → Actions"
             exit 1
           fi
-          echo "All required secrets are present."
+          echo "✅ All required secrets are present."
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
 
+      - name: Determine run flags
+        id: flags
+        run: |
+          DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
+          DAYS="${{ github.event.inputs.days || '7' }}"
+          SAVE_ARTIFACTS="${{ github.event.inputs.save_artifacts || 'true' }}"
+
+          # Build the date slug for artifact naming
+          DATE_SLUG=$(date -u +%Y-%m-%d)
+          PDF_PATH="AI-Tech-Briefing-${DATE_SLUG}.pdf"
+
+          FLAGS="--days $DAYS --pdf-output $PDF_PATH --save-json briefing_output.json --output briefing_output.html"
+          if [ "$DRY_RUN" = "true" ]; then
+            FLAGS="$FLAGS --dry-run"
+          fi
+
+          echo "flags=$FLAGS" >> "$GITHUB_OUTPUT"
+          echo "save_artifacts=$SAVE_ARTIFACTS" >> "$GITHUB_OUTPUT"
+          echo "pdf_path=$PDF_PATH" >> "$GITHUB_OUTPUT"
+          echo "date_slug=$DATE_SLUG" >> "$GITHUB_OUTPUT"
+
       - name: Run briefing pipeline
         run: python main.py ${{ steps.flags.outputs.flags }}
 
-      - name: Upload HTML artifact
-        if: steps.flags.outputs.save_output == 'true'
+      - name: Verify PDF was generated
+        run: |
+          PDF="${{ steps.flags.outputs.pdf_path }}"
+          if [ -f "$PDF" ]; then
+            SIZE=$(du -k "$PDF" | cut -f1)
+            echo "✅ PDF generated: $PDF (${SIZE} KB)"
+            if [ "$SIZE" -gt 2048 ]; then
+              echo "::warning::PDF is larger than 2MB (${SIZE} KB). Consider reducing story count."
+            fi
+          else
+            echo "::error::PDF not found at $PDF"
+            exit 1
+          fi
+
+      - name: Upload briefing artifacts
+        if: steps.flags.outputs.save_artifacts == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: briefing-${{ github.run_id }}
+          name: briefing-${{ steps.flags.outputs.date_slug }}-${{ github.run_id }}
           path: |
+            ${{ steps.flags.outputs.pdf_path }}
             briefing_output.html
             briefing_output.json
           retention-days: 30
           if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        run: |
+          PDF="${{ steps.flags.outputs.pdf_path }}"
+          DATE="${{ steps.flags.outputs.date_slug }}"
+          if [ -f "$PDF" ]; then
+            SIZE=$(du -k "$PDF" | cut -f1)
+            echo "## ✅ Briefing Complete — $DATE" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| PDF | \`$PDF\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| Size | ${SIZE} KB |" >> $GITHUB_STEP_SUMMARY
+            echo "| Dry Run | ${{ github.event.inputs.dry_run || 'false' }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Days Lookback | ${{ github.event.inputs.days || '7' }} |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Briefing Failed — $DATE" >> $GITHUB_STEP_SUMMARY
+            echo "PDF was not generated. Check the logs above for errors." >> $GITHUB_STEP_SUMMARY
+          fi

@@ -20,6 +20,10 @@ secrets.json
 briefing_output.html
 briefing_output.json
 
+# Generated PDFs (large files — uploaded as workflow artifacts instead)
+AI-Tech-Briefing-*.pdf
+test_briefing.pdf
+
 # IDE
 .vscode/
 .idea/
